@@ -54,8 +54,8 @@ static void BowHook(void)
 typedef struct
 {
   LPVOID addr;
-  LPVOID oFunc;
-  LPVOID *hook;
+  LPVOID detourFunc;
+  LPVOID *origFunc;
   const char *name;
 } Patch;
 
@@ -75,9 +75,10 @@ DWORD WINAPI InitThread(LPVOID lpParam)
 
   MH_Initialize();
 
-  Patch patches[] = {{(LPVOID)meleeAddr, oMeleeFunc, (LPVOID *)&MeleeHook, "melee"},
-                     {(LPVOID)staffAddr, oStaffFunc, (LPVOID *)&StaffHook, "staff"},
-                     {(LPVOID)bowAddr, oBowFunc, (LPVOID *)&BowHook, "bow"}};
+  Patch patches[] = {
+      {(LPVOID)meleeAddr, (LPVOID)MeleeHook, (LPVOID *)&oMeleeFunc, "melee"},
+      {(LPVOID)staffAddr, (LPVOID)StaffHook, (LPVOID *)&oStaffFunc, "staff"},
+      {(LPVOID)bowAddr, (LPVOID)BowHook, (LPVOID *)&oBowFunc, "bow"}};
 
   for (const auto &patch : patches)
   {
@@ -85,7 +86,7 @@ DWORD WINAPI InitThread(LPVOID lpParam)
     {
       fprintf(log, "Found %s address: 0x%p\n", patch.name, patch.addr);
 
-      MH_CreateHook(patch.addr, patch.hook, (LPVOID *)patch.oFunc);
+      MH_CreateHook(patch.addr, patch.detourFunc, patch.origFunc);
 
       if (MH_EnableHook(patch.addr) == MH_OK)
         fprintf(log, "SUCCESS: Hook %s successfully enabled. \n", patch.name);
@@ -108,7 +109,7 @@ extern "C"
       {
           OBSEPluginVersionData::kVersion,
 
-          11,
+          12,
           "Configurable Enchantment Charge Cost",
           "rootBrz",
 
