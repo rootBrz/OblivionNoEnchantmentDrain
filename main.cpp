@@ -5,6 +5,7 @@
 #include <memoryapi.h>
 #include <minwindef.h>
 #include <processthreadsapi.h>
+#include <stdio.h>
 
 float multiplier = 0.0f;
 
@@ -50,53 +51,64 @@ static void BowHook(void)
       : "cc", "memory");
 }
 
+typedef struct
+{
+  LPVOID addr;
+  LPVOID oFunc;
+  LPVOID *hook;
+  const char *name;
+} Patch;
+
 DWORD WINAPI InitThread(LPVOID lpParam)
 {
-  SetFileAttributesA(LOG_NAME, FILE_ATTRIBUTE_NORMAL);
-  DeleteFile(LOG_NAME);
+  Sleep(5000);
 
-  // If OBSE initialized, do not run from PROCESS_ATTACH
-  if (lpParam && OBSE_MESSAGE)
-    return true;
+  FILE *log = fopen(LOG_NAME, "w");
 
+  fprintf(log, "Logging started.\n");
   multiplier = ReadFloatIniSetting("ChargeMultiplier");
+  fprintf(log, "Charge multiplier: %f\n", multiplier);
 
-  uintptr_t meleeAddr = FindPattern("0F 2F FE ?? ?? 48 8B 4C 24 70 48 8B 1F 48 81 C1 88");
-  uintptr_t staffAddr = FindPattern("0F 2F FE ?? ?? 48 8B 0D ?? ?? ?? ??");
+  uintptr_t meleeAddr = FindPattern("0F 2F FE ?? ?? 48 8B 4C");
+  uintptr_t staffAddr = FindPattern("0F 2F FE ?? ?? 48 8B 0D");
   uintptr_t bowAddr = FindPattern("0F 2F F7 ?? ?? 49 8B 1E 48 8D 8E");
 
   MH_Initialize();
 
-  MH_CreateHook((LPVOID)meleeAddr, (LPVOID)MeleeHook, (LPVOID *)&oMeleeFunc);
-  MH_EnableHook((LPVOID)meleeAddr);
+  Patch patches[] = {{(LPVOID)meleeAddr, oMeleeFunc, (LPVOID *)&MeleeHook, "melee"},
+                     {(LPVOID)staffAddr, oStaffFunc, (LPVOID *)&StaffHook, "staff"},
+                     {(LPVOID)bowAddr, oBowFunc, (LPVOID *)&BowHook, "bow"}};
 
-  MH_CreateHook((LPVOID)staffAddr, (LPVOID)StaffHook, (LPVOID *)&oStaffFunc);
-  MH_EnableHook((LPVOID)staffAddr);
+  for (const auto &patch : patches)
+  {
+    if (patch.addr != 0)
+    {
+      fprintf(log, "Found %s address: 0x%p\n", patch.name, patch.addr);
 
-  MH_CreateHook((LPVOID)bowAddr, (LPVOID)BowHook, (LPVOID *)&oBowFunc);
-  MH_EnableHook((LPVOID)bowAddr);
+      MH_CreateHook(patch.addr, patch.hook, (LPVOID *)patch.oFunc);
 
-  LogToFile("Found melee address: 0x%p\n", meleeAddr);
-  LogToFile("Found staff address: 0x%p\n", staffAddr);
-  LogToFile("Found bow address: 0x%p\n", bowAddr);
-  LogToFile("Charge multiplier: %f\n", multiplier);
+      if (MH_EnableHook(patch.addr) == MH_OK)
+        fprintf(log, "SUCCESS: Hook %s successfully enabled. \n", patch.name);
+      else
+        fprintf(log, "ERROR: Failed to enable %s hook. \n", patch.name);
+    }
+    else
+      fprintf(log, "ERROR: Pattern not found! Hook %s can't be applied.\n", patch.name);
+  }
+
+  fclose(log);
 
   return true;
 }
 
 // OBSE
-void MessageHandler(OBSEMessagingInterface::Message *msg)
-{
-  if (msg->type == OBSEMessagingInterface::kMessage_PostPostLoad)
-    InitThread(nullptr);
-}
 extern "C"
 {
   OBSEPluginVersionData OBSEPlugin_Version =
       {
           OBSEPluginVersionData::kVersion,
 
-          10,
+          11,
           "Configurable Enchantment Charge Cost",
           "rootBrz",
 
@@ -107,7 +119,6 @@ extern "C"
   {
     PLUGIN_HANDLE = obse->GetPluginHandle();
     OBSE_MESSAGE = (OBSEMessagingInterface *)obse->QueryInterface(kInterface_Messaging);
-    OBSE_MESSAGE->RegisterListener(PLUGIN_HANDLE, "OBSE", MessageHandler);
 
     return true;
   }
