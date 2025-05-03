@@ -4,8 +4,14 @@
 #include <cstdint>
 #include <memoryapi.h>
 #include <minwindef.h>
+#include <process.h>
 #include <processthreadsapi.h>
 #include <stdio.h>
+
+extern "C" float multiplier;
+extern "C" void *oMeleeFunc;
+extern "C" void *oStaffFunc;
+extern "C" void *oBowFunc;
 
 float multiplier = 0.0f;
 
@@ -15,12 +21,12 @@ static void MeleeHook(void)
 {
   __asm__ volatile(
       ".intel_syntax noprefix\n\t"
-      "mulss  xmm6, DWORD PTR [rip + multiplier]\n\t"
-      "jmp   QWORD PTR [rip + oMeleeFunc]\n\t"
+      "mulss  xmm6, multiplier[rip]\n\t"
+      "jmp   oMeleeFunc[rip]\n\t"
       ".att_syntax prefix\n\t"
       :
       :
-      : "cc", "memory");
+      : "cc", "memory", "xmm6");
 }
 
 void *oStaffFunc = nullptr;
@@ -29,12 +35,12 @@ static void StaffHook(void)
 {
   __asm__ volatile(
       ".intel_syntax noprefix\n\t"
-      "mulss  xmm7, DWORD PTR [rip + multiplier]\n\t"
-      "jmp   QWORD PTR [rip + oStaffFunc]\n\t"
+      "mulss  xmm7, multiplier[rip]\n\t"
+      "jmp   oStaffFunc[rip]\n\t"
       ".att_syntax prefix\n\t"
       :
       :
-      : "cc", "memory");
+      : "cc", "memory", "xmm7");
 }
 
 void *oBowFunc = nullptr;
@@ -43,12 +49,12 @@ static void BowHook(void)
 {
   __asm__ volatile(
       ".intel_syntax noprefix\n\t"
-      "mulss  xmm7, DWORD PTR [rip + multiplier]\n\t"
-      "jmp   QWORD PTR [rip + oBowFunc]\n\t"
+      "mulss  xmm7, multiplier[rip]\n\t"
+      "jmp   oBowFunc[rip]\n\t"
       ".att_syntax prefix\n\t"
       :
       :
-      : "cc", "memory");
+      : "cc", "memory", "xmm7");
 }
 
 typedef struct
@@ -59,10 +65,8 @@ typedef struct
   const char *name;
 } Patch;
 
-DWORD WINAPI InitThread(LPVOID lpParam)
+unsigned __stdcall InitThread(void *)
 {
-  Sleep(5000);
-
   FILE *log = fopen(LOG_NAME, "w");
 
   fprintf(log, "Logging started.\n");
@@ -99,22 +103,25 @@ DWORD WINAPI InitThread(LPVOID lpParam)
 
   fclose(log);
 
-  return true;
+  _endthreadex(0);
+  return 0;
 }
 
 // OBSE
 extern "C"
 {
-  OBSEPluginVersionData OBSEPlugin_Version =
-      {
-          OBSEPluginVersionData::kVersion,
-
-          12,
-          "Configurable Enchantment Charge Cost",
-          "rootBrz",
-
-          OBSEPluginVersionData::kAddressIndependence_Signatures,
-          OBSEPluginVersionData::kStructureIndependence_NoStructs};
+  OBSEPluginVersionData OBSEPlugin_Version{
+      OBSEPluginVersionData::kVersion,
+      13,
+      "Configurable Enchantment Charge Cost",
+      "rootBrz",
+      OBSEPluginVersionData::kAddressIndependence_Signatures,
+      OBSEPluginVersionData::kStructureIndependence_NoStructs,
+      {},
+      {},
+      {},
+      {},
+      {}};
 
   bool OBSEPlugin_Load(const OBSEInterface *obse)
   {
